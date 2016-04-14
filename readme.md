@@ -108,3 +108,9 @@ func main()  {
 ## Result
 
     2016/04/14 10:25:58 UserService.Say result: Hello, Foolin!
+    
+    
+    
+## About
+
+Reference [gorilla/rpc](github.com/gorilla/rpc)
