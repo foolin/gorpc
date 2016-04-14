@@ -2,8 +2,8 @@ package main
 import (
 	"net/http"
 	"log"
-	"xinyi.io/gameshared/module/gorpc"
-	"xinyi.io/gameshared/module/gorpc/example/rpcvo"
+	"github.com/foolin/gorpc"
+	"github.com/foolin/gorpc/example/rpcvo"
 )
 
 
