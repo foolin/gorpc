@@ -3,8 +3,11 @@ Exmaple for gorpc
 
 Structure
 ---------
+
 rpcvo --service
+
 client --rpc client
+
 server --rpc server
 
 
