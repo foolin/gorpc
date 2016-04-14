@@ -52,9 +52,11 @@ func (this *Server) execute(request *http.Request) (interface{}, error)  {
 	if err != nil {
 		return nil, err
 	}
-	reqSign := makeSign(timestamp + string(byteBody), this.Secret)
-	if reqSign != sign{
-		return nil, ErrSignInvalid
+	if this.Secret != ""{
+		reqSign := makeSign(timestamp + string(byteBody), this.Secret)
+		if reqSign != sign{
+			return nil, ErrPasswordIncorrect
+		}
 	}
 	serviceSpec, methodSpec, errGet := this.services.get(action)
 	if errGet != nil {

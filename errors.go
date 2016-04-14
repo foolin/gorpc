@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	ErrSignInvalid = errors.New("Sign invalid!")
+	ErrPasswordIncorrect = errors.New("Password incorrect!")
 	ErrURLInvalid = errors.New("URL error!")
 	ErrMethodNotFound = errors.New("Method not found or not register!")
 )

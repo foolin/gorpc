@@ -27,7 +27,10 @@ func (this *Client) Call(name string, args interface{}, reply interface{}) error
 		return err
 	}
 	reqTimestmap := fmt.Sprintf("%v", time.Now().Unix())
-	reqSign := makeSign(reqTimestmap + string(reqParams), this.Secret)
+	reqSign := "rpc"
+	if this.Secret != ""{
+		reqSign = makeSign(reqTimestmap + string(reqParams), this.Secret)
+	}
 	url := this.BaseUrl
 	//request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqParams))
