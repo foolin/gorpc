@@ -6,16 +6,22 @@ import (
 	"reflect"
 	"fmt"
 	"encoding/json"
+	"log"
+	"os"
 )
 
 type Server struct {
-	Secret string
-	services   *serviceMap
+	Secret   string
+	services *serviceMap
+	Log      *log.Logger
 }
 
-
 func NewServer(secret string) *Server {
-	return &Server{Secret: secret, services: new(serviceMap)}
+	return &Server{Secret: secret, services: new(serviceMap), Log: log.New(os.Stdout, "rpc", log.LstdFlags)}
+}
+
+func (this *Server) SetLog(log *log.Logger) {
+	this.Log = log
 }
 
 func (this *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -23,8 +29,8 @@ func (this *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 	this.write(writer, reply, err)
 }
 
-func (this *Server) Register(services ...interface{}) error  {
-	for _, service := range services{
+func (this *Server) Register(services ...interface{}) error {
+	for _, service := range services {
 		err := this.RegisterWithName(service, "")
 		if err != nil {
 			return err
@@ -33,28 +39,30 @@ func (this *Server) Register(services ...interface{}) error  {
 	return nil
 }
 
-func (this *Server) RegisterWithName(service interface{}, name string) error  {
+func (this *Server) RegisterWithName(service interface{}, name string) error {
 	return this.services.register(service, name)
 }
 
-
-func (this *Server) execute(request *http.Request) (interface{}, error)  {
+func (this *Server) execute(request *http.Request) (interface{}, error) {
 	if request.Method != "POST" {
 		return nil, ErrURLInvalid
 	}
 	sign := request.Header.Get("sign")
 	timestamp := request.Header.Get("timestamp")
 	action := request.Header.Get("action")
-	if sign == "" || timestamp == "" || action == ""{
+	if this.Log != nil {
+		this.Log.Printf("rpc listen url:%v, action:%v, sign:%v, timestamp:%v", request.RequestURI, action, sign, timestamp)
+	}
+	if sign == "" || timestamp == "" || action == "" {
 		return nil, ErrURLInvalid
 	}
 	byteBody, err := ioutil.ReadAll(request.Body)
 	if err != nil {
 		return nil, err
 	}
-	if this.Secret != ""{
+	if this.Secret != "" {
 		reqSign := makeSign(timestamp + string(byteBody), this.Secret)
-		if reqSign != sign{
+		if reqSign != sign {
 			return nil, ErrPasswordIncorrect
 		}
 	}
@@ -65,7 +73,7 @@ func (this *Server) execute(request *http.Request) (interface{}, error)  {
 	}
 	refArgs := reflect.New(methodSpec.argsType)
 	args := refArgs.Interface()
-	if len(byteBody) > 0{
+	if len(byteBody) > 0 {
 		err := json.Unmarshal(byteBody, &args)
 		if err != nil {
 			logMsg(fmt.Sprintf("action: %v, %v", action, err))
@@ -94,20 +102,19 @@ func (this *Server) execute(request *http.Request) (interface{}, error)  {
 	return reply, errResult
 }
 
-
-func (this *Server) write(w http.ResponseWriter, reply interface{}, err error)  {
+func (this *Server) write(w http.ResponseWriter, reply interface{}, err error) {
 	body := ""
-	if err == nil && reply != nil{
+	if err == nil && reply != nil {
 		var bytes []byte
 		bytes, err = json.Marshal(reply)
 		if err != nil {
 			logError(err)
-		}else{
+		} else {
 			body = string(bytes)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	if err != nil{
+	if err != nil {
 		w.Header().Set("msg", err.Error())
 	}
 	//header必须在后面

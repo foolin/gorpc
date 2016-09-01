@@ -8,19 +8,37 @@ import (
 	"errors"
 	"io/ioutil"
 	"encoding/json"
+	"log"
 )
 
 type Client struct{
 	BaseUrl string
 	Secret string
+	Log *log.Logger
 }
 
 func NewClient(baseUrl, secret string) *Client {
-	return &Client{baseUrl, secret}
+	return &Client{BaseUrl: baseUrl, Secret: secret}
+}
+
+func (this *Client)SetLog(log *log.Logger){
+	this.Log = log
+}
+
+func (this *Client) Call(name string, args interface{}, reply interface{}) error  {
+	err := this.doCall(name, args, reply)
+	if this.Log != nil{
+		if err != nil {
+			this.Log.Printf("rpc call url: %v, action: %v, error: %v", this.BaseUrl, name, err)
+		}else{
+			this.Log.Printf("rpc call url: %v, action: %v, success.", this.BaseUrl, name)
+		}
+	}
+	return err
 }
 
 
-func (this *Client) Call(name string, args interface{}, reply interface{}) error  {
+func (this *Client) doCall(name string, args interface{}, reply interface{}) error  {
 	//request header
 	reqParams, err := json.Marshal(args)
 	if err != nil {
