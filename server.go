@@ -2,18 +2,27 @@ package gorpc
 
 import (
 	"net/http"
-	"io/ioutil"
 	"reflect"
 	"fmt"
 	"encoding/json"
 	"log"
 	"os"
+	"github.com/valyala/fasthttp"
 )
 
 type Server struct {
 	Secret   string
 	services *serviceMap
 	Log      *log.Logger
+}
+
+type Contexter interface {
+	Method() string
+	RequestUrl()string
+	RequestHeader(key string) string
+	RequestBody() ([]byte, error)
+	ResponseHeader(key, value string)
+	ResponseWrite(statusCode int, body []byte) error
 }
 
 func NewServer(secret string) *Server {
@@ -25,8 +34,22 @@ func (this *Server) SetLog(log *log.Logger) {
 }
 
 func (this *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	reply, err := this.execute(request)
-	this.write(writer, reply, err)
+	ctx := NewHttpContext(writer, request)
+	this.Execute(ctx)
+}
+
+
+func (this *Server) ServeFastHTTP(httpCtx *fasthttp.RequestCtx) {
+	ctx := NewFastContext(httpCtx)
+	this.Execute(ctx)
+}
+
+func (this *Server) Execute(ctx Contexter) {
+	reply, err := this.paserAndExecute(ctx)
+	this.write(ctx, reply, err)
+	if err != nil {
+		this.Log.Fatalf("rpc write error: %v", err)
+	}
 }
 
 func (this *Server) Register(services ...interface{}) error {
@@ -43,20 +66,20 @@ func (this *Server) RegisterWithName(service interface{}, name string) error {
 	return this.services.register(service, name)
 }
 
-func (this *Server) execute(request *http.Request) (interface{}, error) {
-	if request.Method != "POST" {
+func (this *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
+	if ctx.Method() != "POST" {
 		return nil, ErrURLInvalid
 	}
-	sign := request.Header.Get("sign")
-	timestamp := request.Header.Get("timestamp")
-	action := request.Header.Get("action")
+	sign := ctx.RequestHeader("sign")
+	timestamp := ctx.RequestHeader("timestamp")
+	action := ctx.RequestHeader("action")
 	if this.Log != nil {
-		this.Log.Printf("rpc listen url:%v, action:%v, sign:%v, timestamp:%v", request.RequestURI, action, sign, timestamp)
+		this.Log.Printf("rpc listen url:%v, action:%v, sign:%v, timestamp:%v", ctx.RequestUrl(), action, sign, timestamp)
 	}
 	if sign == "" || timestamp == "" || action == "" {
 		return nil, ErrURLInvalid
 	}
-	byteBody, err := ioutil.ReadAll(request.Body)
+	byteBody, err := ctx.RequestBody()
 	if err != nil {
 		return nil, err
 	}
@@ -102,24 +125,19 @@ func (this *Server) execute(request *http.Request) (interface{}, error) {
 	return reply, errResult
 }
 
-func (this *Server) write(w http.ResponseWriter, reply interface{}, err error) {
-	body := ""
+func (this *Server) write(ctx Contexter, reply interface{}, err error){
+	var body []byte
 	if err == nil && reply != nil {
-		var bytes []byte
-		bytes, err = json.Marshal(reply)
+		body, err = json.Marshal(reply)
 		if err != nil {
 			logError(err)
-		} else {
-			body = string(bytes)
 		}
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	ctx.ResponseHeader("Content-Type", "application/json; charset=utf-8")
 	if err != nil {
-		w.Header().Set("msg", err.Error())
+		ctx.ResponseHeader("msg", err.Error())
 	}
-	//header必须在后面
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, body)
+	err = ctx.ResponseWrite(http.StatusOK, body)
 }
 
 
