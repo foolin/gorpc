@@ -5,15 +5,14 @@ import (
 	"reflect"
 	"fmt"
 	"encoding/json"
-	"log"
-	"os"
 	"github.com/valyala/fasthttp"
 )
 
 type Server struct {
 	Secret   string
 	services *serviceMap
-	Log      *log.Logger
+	OnExecute func(action string, req interface{}, res interface{})
+	OnError func(err error)
 }
 
 type Contexter interface {
@@ -26,11 +25,7 @@ type Contexter interface {
 }
 
 func NewServer(secret string) *Server {
-	return &Server{Secret: secret, services: new(serviceMap), Log: log.New(os.Stdout, "rpc", log.LstdFlags)}
-}
-
-func (this *Server) SetLog(log *log.Logger) {
-	this.Log = log
+	return &Server{Secret: secret, services: new(serviceMap)}
 }
 
 func (this *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -46,9 +41,16 @@ func (this *Server) ServeFastHTTP(httpCtx *fasthttp.RequestCtx) {
 
 func (this *Server) Execute(ctx Contexter) {
 	reply, err := this.paserAndExecute(ctx)
-	this.write(ctx, reply, err)
 	if err != nil {
-		this.Log.Fatalf("rpc write error: %v", err)
+		if this.OnError != nil{
+			this.OnError(fmt.Errorf("rpc execute error: %v", err))
+		}
+	}
+	err = this.write(ctx, reply, err)
+	if err != nil {
+		if this.OnError != nil{
+			this.OnError(fmt.Errorf("rpc write error: %v", err))
+		}
 	}
 }
 
@@ -73,9 +75,6 @@ func (this *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
 	sign := ctx.RequestHeader("sign")
 	timestamp := ctx.RequestHeader("timestamp")
 	action := ctx.RequestHeader("action")
-	if this.Log != nil {
-		this.Log.Printf("rpc listen url:%v, action:%v, sign:%v, timestamp:%v", ctx.RequestUrl(), action, sign, timestamp)
-	}
 	if sign == "" || timestamp == "" || action == "" {
 		return nil, ErrURLInvalid
 	}
@@ -91,15 +90,13 @@ func (this *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
 	}
 	serviceSpec, methodSpec, errGet := this.services.get(action)
 	if errGet != nil {
-		logError(errGet)
-		return nil, ErrMethodNotFound
+		return nil, fmt.Errorf("rpc found action %v error %v", action, errGet)
 	}
 	refArgs := reflect.New(methodSpec.argsType)
 	args := refArgs.Interface()
 	if len(byteBody) > 0 {
 		err := json.Unmarshal(byteBody, &args)
 		if err != nil {
-			logMsg(fmt.Sprintf("action: %v, %v", action, err))
 			return nil, err
 		}
 	}
@@ -121,23 +118,22 @@ func (this *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
 	if errInter != nil {
 		errResult = errInter.(error)
 	}
-
+	if this.OnExecute != nil{
+		this.OnExecute(action, args, reply)
+	}
 	return reply, errResult
 }
 
-func (this *Server) write(ctx Contexter, reply interface{}, err error){
+func (this *Server) write(ctx Contexter, reply interface{}, err error) error{
 	var body []byte
 	if err == nil && reply != nil {
 		body, err = json.Marshal(reply)
-		if err != nil {
-			logError(err)
-		}
 	}
 	ctx.ResponseHeader("Content-Type", "application/json; charset=utf-8")
 	if err != nil {
 		ctx.ResponseHeader("msg", err.Error())
 	}
-	err = ctx.ResponseWrite(http.StatusOK, body)
+	return ctx.ResponseWrite(http.StatusOK, body)
 }
 
 
