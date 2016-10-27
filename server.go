@@ -28,35 +28,35 @@ func NewServer(secret string) *Server {
 	return &Server{Secret: secret, services: new(serviceMap)}
 }
 
-func (this *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+func (serv *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := NewHttpContext(writer, request)
-	this.Execute(ctx)
+	serv.Execute(ctx)
 }
 
 
-func (this *Server) ServeFastHTTP(httpCtx *fasthttp.RequestCtx) {
+func (serv *Server) ServeFastHTTP(httpCtx *fasthttp.RequestCtx) {
 	ctx := NewFastContext(httpCtx)
-	this.Execute(ctx)
+	serv.Execute(ctx)
 }
 
-func (this *Server) Execute(ctx Contexter) {
-	reply, err := this.paserAndExecute(ctx)
-	if err != nil {
-		if this.OnError != nil{
-			this.OnError(fmt.Errorf("rpc execute error: %v", err))
+func (serv *Server) Execute(ctx Contexter) {
+	defer func() {
+		if rerr := recover(); rerr != nil{
+			if serv.OnError != nil{
+				serv.OnError(fmt.Errorf("rpc panic: %v", rerr))
+			}
 		}
-	}
-	err = this.write(ctx, reply, err)
-	if err != nil {
-		if this.OnError != nil{
-			this.OnError(fmt.Errorf("rpc write error: %v", err))
-		}
+	}()
+	reply, err := serv.paserAndExecute(ctx)
+	wErr := serv.write(ctx, reply, err)
+	if wErr != nil && serv.OnError != nil{
+		serv.OnError(fmt.Errorf("rpc write error: %v", err))
 	}
 }
 
-func (this *Server) Register(services ...interface{}) error {
+func (serv *Server) Register(services ...interface{}) error {
 	for _, service := range services {
-		err := this.RegisterWithName(service, "")
+		err := serv.RegisterWithName(service, "")
 		if err != nil {
 			return err
 		}
@@ -64,11 +64,11 @@ func (this *Server) Register(services ...interface{}) error {
 	return nil
 }
 
-func (this *Server) RegisterWithName(service interface{}, name string) error {
-	return this.services.register(service, name)
+func (serv *Server) RegisterWithName(service interface{}, name string) error {
+	return serv.services.register(service, name)
 }
 
-func (this *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
+func (serv *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
 	if ctx.Method() != "POST" {
 		return nil, ErrURLInvalid
 	}
@@ -82,13 +82,13 @@ func (this *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	if this.Secret != "" {
-		reqSign := makeSign(timestamp + string(byteBody), this.Secret)
+	if serv.Secret != "" {
+		reqSign := makeSign(timestamp + string(byteBody), serv.Secret)
 		if reqSign != sign {
 			return nil, ErrPasswordIncorrect
 		}
 	}
-	serviceSpec, methodSpec, errGet := this.services.get(action)
+	serviceSpec, methodSpec, errGet := serv.services.get(action)
 	if errGet != nil {
 		return nil, fmt.Errorf("rpc found action %v error %v", action, errGet)
 	}
@@ -118,13 +118,17 @@ func (this *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
 	if errInter != nil {
 		errResult = errInter.(error)
 	}
-	if this.OnExecute != nil{
-		this.OnExecute(action, args, reply)
+	if serv.OnExecute != nil{
+		if errResult != nil{
+			serv.OnExecute(action, args, errResult)
+		}else{
+			serv.OnExecute(action, args, reply)
+		}
 	}
 	return reply, errResult
 }
 
-func (this *Server) write(ctx Contexter, reply interface{}, err error) error{
+func (serv *Server) write(ctx Contexter, reply interface{}, err error) error{
 	var body []byte
 	if err == nil && reply != nil {
 		body, err = json.Marshal(reply)
