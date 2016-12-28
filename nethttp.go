@@ -41,6 +41,6 @@ func (ctx *HttpContext) ResponseHeader(key, value string){
 func (ctx *HttpContext) ResponseWrite(statusCode int, body []byte) error{
 	//header必须在后面
 	ctx.response.WriteHeader(http.StatusOK)
-	_, err := fmt.Fprint(ctx.response, body)
+	_, err := fmt.Fprint(ctx.response, string(body))
 	return err
 }

@@ -107,11 +107,12 @@ func (serv *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
 
 	// omit the HTTP request if the service method doesn't accept it
 	var errValue []reflect.Value
-	errValue = methodSpec.method.Func.Call([]reflect.Value{
+	errValue = serv.callFuc(methodSpec.method, []reflect.Value{
 		serviceSpec.rcvr,
 		refArgs,
 		refReply,
 	})
+
 	// Cast the result to error if needed.
 	var errResult error
 	errInter := errValue[0].Interface()
@@ -126,6 +127,16 @@ func (serv *Server) paserAndExecute(ctx Contexter) (interface{}, error) {
 		}
 	}
 	return reply, errResult
+}
+
+func (serv *Server) callFuc(method reflect.Method, in []reflect.Value) (out []reflect.Value){
+	defer func() {
+		if err := recover(); err != nil{
+			out = []reflect.Value{reflect.ValueOf(err)}
+		}
+	}()
+	out = method.Func.Call(in)
+	return
 }
 
 func (serv *Server) write(ctx Contexter, reply interface{}, err error) error{

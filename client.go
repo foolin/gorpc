@@ -11,34 +11,33 @@ import (
 	"log"
 )
 
-type Client struct{
+type Client struct {
 	BaseUrl string
-	Secret string
-	Log *log.Logger
+	Secret  string
+	Log     *log.Logger
 }
 
 func NewClient(baseUrl, secret string) *Client {
 	return &Client{BaseUrl: baseUrl, Secret: secret}
 }
 
-func (this *Client)SetLog(log *log.Logger){
+func (this *Client) SetLog(log *log.Logger) {
 	this.Log = log
 }
 
-func (this *Client) Call(name string, args interface{}, reply interface{}) error  {
+func (this *Client) Call(name string, args interface{}, reply interface{}) error {
 	err := this.doCall(name, args, reply)
-	if this.Log != nil{
+	if this.Log != nil {
 		if err != nil {
 			this.Log.Printf("rpc call url: %v, action: %v, error: %v", this.BaseUrl, name, err)
-		}else{
+		} else {
 			this.Log.Printf("rpc call url: %v, action: %v, success.", this.BaseUrl, name)
 		}
 	}
 	return err
 }
 
-
-func (this *Client) doCall(name string, args interface{}, reply interface{}) error  {
+func (this *Client) doCall(name string, args interface{}, reply interface{}) error {
 	//request header
 	reqParams, err := json.Marshal(args)
 	if err != nil {
@@ -46,7 +45,7 @@ func (this *Client) doCall(name string, args interface{}, reply interface{}) err
 	}
 	reqTimestmap := fmt.Sprintf("%v", time.Now().Unix())
 	reqSign := "rpc"
-	if this.Secret != ""{
+	if this.Secret != "" {
 		reqSign = makeSign(reqTimestmap + string(reqParams), this.Secret)
 	}
 	url := this.BaseUrl
@@ -71,14 +70,20 @@ func (this *Client) doCall(name string, args interface{}, reply interface{}) err
 		return errors.New(msg)
 	}
 	//如果不需要返回数据
-	if reply == nil{
+	if reply == nil {
 		return nil
 	}
 	byteBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("Rpc read response body error: %v", err)
+	}
+	if len(byteBody) <= 0{
+		return fmt.Errorf("Rpc reponse empty content.")
 	}
 	err = json.Unmarshal(byteBody, reply)
-	return err
+	if err != nil {
+		return fmt.Errorf("Rpc Unmarshal json error: %v, content: %s", err, byteBody)
+	}
+	return nil
 }
 
